@@ -1,0 +1,13 @@
+# The bot token is a secret and must never be committed.
+config.json
+
+# Runtime artifacts
+logs/
+__pycache__/
+*.pyc
+.venv/
+*.txt.bak
+
+# Local scratch output from manual probes
+probe*.py
+*-probe.txt
