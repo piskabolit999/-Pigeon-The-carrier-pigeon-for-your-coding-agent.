@@ -160,6 +160,26 @@ generation, and config validation.
 powershell -ExecutionPolicy Bypass -File .\uninstall_autostart.ps1
 ```
 
+## Description
+
+Control your Cline CLI coding agent from Telegram. Send a task from your
+phone, Pigeon runs it on your Windows machine in the background, streams the
+progress back into the chat, and installs itself into autostart on first run.
+
+```
+🐦 Control your Cline CLI agent from Telegram. Runs on your Windows machine in
+the background, streams progress live, installs its own autostart.
+```
+
+Shorter alternates:
+
+| Angle | Description |
+|---|---|
+| Benefit | `Send coding tasks from your phone. Pigeon runs Cline CLI on your machine while you do something else.` |
+| Technical | `Telegram bridge for the Cline CLI on Windows. Background execution, live streaming, session memory, autostart.` |
+| One-liner | `Drive your coding agent from Telegram. It keeps working after you close the laptop.` |
+| Playful | `A carrier pigeon for your coding agent. Telegram in, finished build out.` |
+
 ## Publishing
 
 ### About (short description, 80 chars visible)
