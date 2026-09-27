@@ -5,7 +5,11 @@ import unittest
 from pathlib import Path
 
 from cline_bot.config import AppConfig
-from cline_bot.session_registry import SessionRegistry
+from cline_bot.session_registry import (
+    MAX_REMEMBERED_ANSWER_CHARACTERS,
+    MAX_REMEMBERED_TURNS,
+    SessionRegistry,
+)
 
 EXAMPLE_CHAT_ID = 100
 OTHER_CHAT_ID = 200
@@ -19,6 +23,56 @@ def build_config(default_directory: str) -> AppConfig:
         default_agent_mode="plan",
         auto_approve_tools=False,
     )
+
+
+def build_session():
+    return SessionRegistry(build_config(str(Path(tempfile.gettempdir())))).get_or_create(
+        EXAMPLE_CHAT_ID
+    )
+
+
+class ConversationMemoryTest(unittest.TestCase):
+    def test_first_prompt_has_no_history(self) -> None:
+        session = build_session()
+
+        self.assertEqual(session.build_prompt_with_context("now the tests"), "now the tests")
+
+    def test_earlier_turns_are_replayed(self) -> None:
+        session = build_session()
+        session.remember_turn("add type hints", "done, 3 files")
+
+        prompt = session.build_prompt_with_context("now the tests")
+
+        self.assertIn("add type hints", prompt)
+        self.assertIn("done, 3 files", prompt)
+        self.assertIn("now the tests", prompt)
+
+    def test_keeps_only_the_recent_turns(self) -> None:
+        session = build_session()
+        for index in range(MAX_REMEMBERED_TURNS + 3):
+            session.remember_turn(f"request {index}", f"answer {index}")
+
+        prompt = session.build_prompt_with_context("latest")
+
+        self.assertNotIn("request 0", prompt)
+        self.assertIn(f"request {MAX_REMEMBERED_TURNS + 2}", prompt)
+
+    def test_very_long_answers_are_trimmed(self) -> None:
+        session = build_session()
+        session.remember_turn("q", "x" * (MAX_REMEMBERED_ANSWER_CHARACTERS * 2))
+
+        prompt = session.build_prompt_with_context("next")
+
+        self.assertLess(
+            len(prompt), MAX_REMEMBERED_ANSWER_CHARACTERS + len("q") + 500
+        )
+
+    def test_forget_turns_clears_the_memory(self) -> None:
+        session = build_session()
+        session.remember_turn("old", "answer")
+        session.forget_turns()
+
+        self.assertEqual(session.build_prompt_with_context("fresh"), "fresh")
 
 
 class SessionRegistryTest(unittest.TestCase):

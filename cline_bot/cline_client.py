@@ -21,6 +21,7 @@ TERMINATION_GRACE_SECONDS = 5
 MAX_OUTPUT_CHARACTERS = 400_000
 OUTPUT_ENCODING = "utf-8"
 TRUNCATION_NOTICE = "[output truncated: limit reached]"
+DISABLED_THINKING_LEVEL = "none"
 
 LOGGER = logging.getLogger(__name__)
 
@@ -116,28 +117,45 @@ class ClineClient:
 
     @staticmethod
     def _resolve_launcher(command: str) -> List[str]:
-        """Return the argv prefix that starts the CLI.
+        """Return the argv prefix that starts the CLI without a shell.
 
-        npm installs `clite` as a `.cmd` shim, which Windows cannot execute
-        directly, so shims are wrapped in the command interpreter.
+        The npm shim `clite.cmd` forwards its arguments through `cmd.exe`,
+        which re-encodes them using the console code page. That mangles emoji
+        and non-Latin text. Invoking the underlying Node entry point directly
+        keeps the arguments as UTF-8 and avoids a shell layer entirely.
         """
-        executable = command
-        if not (os.path.isabs(command) and Path(command).exists()):
-            discovered = shutil.which(command)
-            if discovered:
-                executable = discovered
-            else:
-                npm_shim = Path(os.environ.get("APPDATA", "")) / "npm" / f"{command}.cmd"
-                if not npm_shim.exists():
-                    raise ClineClientError(
-                        f"Cannot find '{command}'. Install Cline CLI with "
-                        "'npm install -g @cline/cli' or set 'clite_command'."
-                    )
-                executable = str(npm_shim)
+        node_entry = ClineClient._find_node_entry(command)
+        if node_entry:
+            node = shutil.which("node") or "node"
+            return [node, str(node_entry)]
 
+        executable = ClineClient._find_executable(command)
+        if executable is None:
+            raise ClineClientError(
+                f"Cannot find '{command}'. Install Cline CLI with "
+                "'npm install -g @cline/cli' or set 'clite_command'."
+            )
         if executable.lower().endswith((".cmd", ".bat")):
             return [os.environ.get("COMSPEC", "cmd.exe"), "/c", executable]
         return [executable]
+
+    @staticmethod
+    def _find_node_entry(command: str) -> Optional[Path]:
+        """Locate the CLI entry script inside the global npm package."""
+        npm_root = Path(os.environ.get("APPDATA", "")) / "npm" / "node_modules"
+        candidate = npm_root / "@cline" / "cli" / "bin" / command
+        return candidate if candidate.is_file() else None
+
+    @staticmethod
+    def _find_executable(command: str) -> Optional[str]:
+        if os.path.isabs(command) and Path(command).exists():
+            return command
+        discovered = shutil.which(command)
+        if discovered:
+            return discovered
+        npm_shim = Path(os.environ.get("APPDATA", "")) / "npm" / f"{command}.cmd"
+        return str(npm_shim) if npm_shim.exists() else None
+
 
     def build_command(
         self,
@@ -145,21 +163,28 @@ class ClineClient:
         working_directory: str,
         agent_mode: str,
         is_auto_approved: bool,
-        session_id: Optional[str] = None,
         model_id: Optional[str] = None,
     ) -> List[str]:
-        """Compose the CLI argument list for a single run."""
+        """Compose the CLI argument list for a single run.
+
+        `--id` is deliberately not used. Resuming a session makes the CLI
+        switch to its interactive TUI, which aborts with "interactive mode
+        requires a TTY" whenever stdin and stdout are pipes, and a bot is
+        always pipes. Conversation continuity is handled by prepending the
+        earlier turns to the prompt instead.
+        """
         arguments = self._launcher + [
             prompt,
             "--cwd", working_directory,
-            "--thinking", self._thinking_level,
             "--timeout", str(self._run_timeout_seconds),
             "--auto-approve", "true" if is_auto_approved else "false",
         ]
         if agent_mode == "plan":
             arguments.append("--plan")
-        if session_id:
-            arguments += ["--id", session_id]
+        # Reasoning models reject `--thinking none`, so the flag is omitted to
+        # let the provider choose rather than failing the whole run.
+        if self._thinking_level != DISABLED_THINKING_LEVEL:
+            arguments += ["--thinking", self._thinking_level]
         # Omitting the flag keeps whatever the provider has configured, so the
         # bot never silently overrides a model the user chose in the CLI.
         if model_id:
@@ -179,17 +204,11 @@ class ClineClient:
         working_directory: str,
         agent_mode: str,
         is_auto_approved: bool,
-        session_id: Optional[str] = None,
         model_id: Optional[str] = None,
     ) -> ClineRun:
         """Spawn the CLI for a prompt and return a handle to the run."""
         arguments = self.build_command(
-            prompt,
-            working_directory,
-            agent_mode,
-            is_auto_approved,
-            session_id,
-            model_id,
+            prompt, working_directory, agent_mode, is_auto_approved, model_id
         )
         process = await asyncio.create_subprocess_exec(
             *arguments,
@@ -233,10 +252,9 @@ class ClineClient:
     ) -> Optional[str]:
         """Return the CLI session created after the given snapshot.
 
-        Taking a snapshot before the run and diffing afterwards guarantees the
-        bot resumes its OWN session. Reading simply "the newest session" would
-        hijack an unrelated session, for example one the user started in their
-        own terminal at the same time.
+        Taking a snapshot before the run and diffing afterwards identifies the
+        session this run produced, so a run never adopts an unrelated one
+        started in another terminal at the same time.
         """
         for session in self.fetch_recent_sessions():
             session_id = session.get("sessionId")

@@ -12,6 +12,9 @@ from typing import Dict, Optional
 from .cline_client import ClineRun
 from .config import AppConfig
 
+MAX_REMEMBERED_TURNS = 6
+MAX_REMEMBERED_ANSWER_CHARACTERS = 2000
+
 
 @dataclass
 class ChatSession:
@@ -22,13 +25,36 @@ class ChatSession:
     is_auto_approved: bool
     model_id: Optional[str] = None
     is_busy: bool = False
+    turns: list = field(default_factory=list, repr=False)
     running_process: Optional[ClineRun] = field(default=None, repr=False)
     running_output_task: Optional[asyncio.Task] = field(default=None, repr=False)
-    cline_session_id: Optional[str] = None
 
     @property
     def has_running_task(self) -> bool:
         return self.running_process is not None or self.running_output_task is not None
+
+    def remember_turn(self, prompt: str, answer: str) -> None:
+        """Store one exchange so the next prompt can carry the context.
+
+        The CLI cannot resume a session without a TTY, so continuity is
+        rebuilt by replaying the recent turns into the next prompt.
+        """
+        trimmed_answer = answer[-MAX_REMEMBERED_ANSWER_CHARACTERS:]
+        self.turns.append((prompt, trimmed_answer))
+        del self.turns[:-MAX_REMEMBERED_TURNS]
+
+    def forget_turns(self) -> None:
+        self.turns.clear()
+
+    def build_prompt_with_context(self, prompt: str) -> str:
+        """Prefix the prompt with the earlier turns of this conversation."""
+        if not self.turns:
+            return prompt
+        history = "\n\n".join(
+            f"[earlier request]\n{previous}\n[earlier answer]\n{answer}"
+            for previous, answer in self.turns
+        )
+        return f"{history}\n\n[next request]\n{prompt}"
 
     def describe(self) -> str:
         """Render the state for the /status command."""
@@ -38,7 +64,7 @@ class ChatSession:
                 f"directory: {self.working_directory}",
                 f"agent mode: {self.agent_mode}",
                 f"model: {self.model_id or 'provider default'}",
-                f"cline session: {self.cline_session_id or '(new)'}",
+                f"remembered turns: {len(self.turns)}",
                 f"auto approve: {self.is_auto_approved}",
                 f"busy: {self.is_busy}",
             ]

@@ -97,8 +97,12 @@ autostart at this moment** — nothing else to configure.
 | `/status` | directory, mode, session id, busy state |
 | `/stop` | cancel the running task |
 | `/history` | recent agent sessions |
+| `/screen` | send a screenshot of your desktop |
+| `/type <text>` | type into the focused window |
+| `/key <ENTER\|TAB\|ESC>` | send a keystroke |
 | `/shell <cmd>` | run a PowerShell command (60 s cap) |
 | `/approve on\|off` | toggle automatic tool approval |
+| `/new` | forget the remembered conversation turns |
 
 ## How it works
 
@@ -120,9 +124,15 @@ autostart at this moment** — nothing else to configure.
 ```
 
 Long polling means no public port, no tunnel and no inbound firewall rule.
-The prompt is passed to `clite` as an argument list, never a shell string.
-After each run Pigeon records the session id, so the next message resumes the
-same conversation.
+The prompt is passed to the CLI's Node entry point as an argument list, never
+a shell string, so emoji and non-Latin text survive intact.
+
+Pigeon remembers the last few exchanges of each chat and replays them into the
+next prompt. The CLI cannot resume a session without a TTY, and a bot is always
+pipes, so continuity is rebuilt this way instead.
+
+`/screen`, `/type` and `/key` expose the desktop: a screenshot of the virtual
+screen, typing into the focused window, and sending keystrokes.
 
 ## Security
 
@@ -185,7 +195,7 @@ cline_bot/
 ├── handlers.py             Telegram handlers
 ├── text_utils.py           pure text helpers
 └── logging_setup.py        rotating logs
-tests/                      56 unit tests
+tests/                      87 unit tests
 ```
 
 Two rules keep it maintainable: `ClineClient` is the only module that spawns a
@@ -205,7 +215,7 @@ Python 3.12 and newer with `RuntimeError: There is no current event loop`.
 python -m unittest discover -s tests -t .
 ```
 
-56 tests, no network required. They cover output decoding, process
+87 tests, no network required. They cover output decoding, process
 termination, the output cap, allowlist and pairing logic, autostart script
 generation, the polling lifecycle, and config validation.
 

@@ -19,10 +19,13 @@ def build_client(command: str = EXAMPLE_COMMAND) -> ClineClient:
 
 
 class ResolveLauncherTest(unittest.TestCase):
-    def test_wraps_windows_shims_in_the_command_interpreter(self) -> None:
-        client = build_client()
+    def test_uses_the_node_entry_point_instead_of_a_shim(self) -> None:
+        # The .cmd shim re-encodes arguments through cmd.exe, which breaks
+        # emoji and non-Latin text, so the Node entry point is used directly.
+        launcher = ClineClient._resolve_launcher(EXAMPLE_COMMAND)
 
-        self.assertIn("/c", client.build_command("hi", EXAMPLE_DIRECTORY, "act", True))
+        self.assertNotIn("/c", launcher)
+        self.assertTrue(launcher[0].lower().endswith("node.exe") or launcher[0] == "node")
 
     def test_reports_a_missing_executable(self) -> None:
         with self.assertRaises(ClineClientError):
@@ -35,6 +38,30 @@ class BuildCommandTest(unittest.TestCase):
 
         self.assertIn("fix bug", arguments)
         self.assertIn(EXAMPLE_DIRECTORY, arguments)
+
+    def test_never_resumes_a_session(self) -> None:
+        # Resuming switches the CLI to its TUI, which needs a TTY.
+        arguments = build_client().build_command("x", EXAMPLE_DIRECTORY, "act", True)
+
+        self.assertNotIn("--id", arguments)
+
+    def test_omits_thinking_when_disabled(self) -> None:
+        # Reasoning models reject `--thinking none`.
+        client = ClineClient(
+            command=EXAMPLE_COMMAND,
+            run_timeout_seconds=EXAMPLE_TIMEOUT,
+            thinking_level="none",
+        )
+
+        arguments = client.build_command("x", EXAMPLE_DIRECTORY, "act", True)
+
+        self.assertNotIn("--thinking", arguments)
+
+    def test_keeps_an_enabled_thinking_level(self) -> None:
+        arguments = build_client().build_command("x", EXAMPLE_DIRECTORY, "act", True)
+
+        self.assertEqual(arguments[arguments.index("--thinking") + 1], EXAMPLE_THINKING)
+
 
     def test_adds_plan_flag_only_in_plan_mode(self) -> None:
         plan_arguments = build_client().build_command("x", EXAMPLE_DIRECTORY, "plan", True)
@@ -50,7 +77,7 @@ class BuildCommandTest(unittest.TestCase):
 
     def test_passes_the_requested_model(self) -> None:
         arguments = build_client().build_command(
-            "x", EXAMPLE_DIRECTORY, "act", True, None, "anthropic/claude-sonnet-4"
+            "x", EXAMPLE_DIRECTORY, "act", True, "anthropic/claude-sonnet-4"
         )
 
         self.assertEqual(
@@ -64,18 +91,6 @@ class BuildCommandTest(unittest.TestCase):
         )
 
         self.assertNotIn("--model", arguments)
-
-    def test_continues_an_existing_session(self) -> None:
-        arguments = build_client().build_command(
-            "x", EXAMPLE_DIRECTORY, "act", True, "session-1"
-        )
-
-        self.assertEqual(arguments[arguments.index("--id") + 1], "session-1")
-
-    def test_omits_session_flag_for_a_new_session(self) -> None:
-        arguments = build_client().build_command("x", EXAMPLE_DIRECTORY, "act", True)
-
-        self.assertNotIn("--id", arguments)
 
 
 class ParseHistoryTest(unittest.TestCase):

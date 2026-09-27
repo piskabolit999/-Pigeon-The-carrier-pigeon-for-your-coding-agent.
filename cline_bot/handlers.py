@@ -17,6 +17,7 @@ from telegram.ext import ContextTypes
 from .authorization import AuthorizationPolicy
 from .cline_client import ClineClient, ClineRun
 from .config import AppConfig
+from .screen import ScreenError, capture_screenshot, escape_for_send_keys, send_keys
 from .session_registry import ChatSession, SessionRegistry
 from .text_utils import split_into_chunks
 
@@ -38,6 +39,9 @@ HELP_TEXT = (
     "/stop — cancel the running task\n"
     "/history — list recent Cline sessions\n"
     "/shell <command> — run a PowerShell command\n"
+    "/screen — send a screenshot of the desktop\n"
+    "/type <text> — type into the focused window\n"
+    "/key <ENTER|TAB|ESC> — send a keystroke\n"
     "/approve on|off — toggle automatic tool approval"
 )
 
@@ -118,7 +122,6 @@ class BotHandlers:
             return
 
         session.working_directory = str(target.resolve())
-        session.cline_session_id = None
         await update.effective_message.reply_text(f"📂 {session.working_directory}")
 
     @staticmethod
@@ -135,7 +138,6 @@ class BotHandlers:
         requested_mode = context.args[0].lower() if context.args else None
         if requested_mode in ("plan", "act") and requested_mode != session.agent_mode:
             session.agent_mode = requested_mode
-            session.cline_session_id = None
         await update.effective_message.reply_text(f"🧩 agent mode: {session.agent_mode}")
 
     async def change_model(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -153,10 +155,53 @@ class BotHandlers:
         requested_model = " ".join(context.args)
         session.model_id = None if requested_model == "default" else requested_model
         # The CLI binds a model to a session, so a new one is required.
-        session.cline_session_id = None
         await update.effective_message.reply_text(
             f"🧠 model: {session.model_id or 'provider default'}"
         )
+
+    async def take_screenshot(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Send the current desktop to the chat."""
+        if await self._resolve_session(update, context) is None:
+            return
+        await update.effective_message.reply_text("📸 Capturing…")
+        try:
+            screenshot = await capture_screenshot()
+        except ScreenError as error:
+            await update.effective_message.reply_text(f"❌ {error}")
+            return
+        await update.effective_message.reply_photo(
+            photo=open(screenshot, "rb"), caption="🖥 Current screen"
+        )
+
+    async def type_on_screen(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Type text into whatever window currently has focus."""
+        if await self._resolve_session(update, context) is None:
+            return
+        if not context.args:
+            await update.effective_message.reply_text("Usage: /type <text>")
+            return
+        text = escape_for_send_keys(" ".join(context.args))
+        try:
+            await send_keys(text)
+        except ScreenError as error:
+            await update.effective_message.reply_text(f"❌ {error}")
+            return
+        await update.effective_message.reply_text("⌨️ Typed into the focused window.")
+
+    async def press_key(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Send a keystroke, for example ENTER or TAB."""
+        if await self._resolve_session(update, context) is None:
+            return
+        if not context.args:
+            await update.effective_message.reply_text("Usage: /key <ENTER|TAB|ESC>")
+            return
+        key_name = context.args[0].upper()
+        try:
+            await send_keys(f"{{{key_name}}}")
+        except ScreenError as error:
+            await update.effective_message.reply_text(f"❌ {error}")
+            return
+        await update.effective_message.reply_text(f"🔘 Sent {key_name}.")
 
     async def start_new_session(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -164,7 +209,6 @@ class BotHandlers:
         session = await self._resolve_session(update, context)
         if session is None:
             return
-        session.cline_session_id = None
 
     async def show_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session = await self._resolve_session(update, context)
@@ -275,7 +319,6 @@ class BotHandlers:
     ) -> None:
         session.is_busy = True
         working_directory = self._sessions.resolve_working_directory(session)
-        known_session_ids = self._cline.snapshot_cli_session_ids()
         header_message = await update.effective_message.reply_text(
             f"🚀 Started\n📂 {working_directory}\n"
             f"🧩 mode: {session.agent_mode}\n\n{prompt[:PROMPT_HEADER_LENGTH]}"
@@ -296,9 +339,7 @@ class BotHandlers:
 
         report = self._build_report(output_lines, exit_code)
         await self._reply_to_message(header_message, report)
-        session.cline_session_id = self._cline.find_cli_session_started_after(
-            known_session_ids
-        )
+        session.remember_turn(prompt, report)
 
     async def _run_with_progress(
         self,
@@ -309,11 +350,10 @@ class BotHandlers:
     ) -> "tuple[list[str], int]":
         """Run the prompt and keep the status message alive while it works."""
         run = await self._cline.start_prompt(
-            prompt,
+            session.build_prompt_with_context(prompt),
             working_directory,
             session.agent_mode,
             session.is_auto_approved,
-            session.cline_session_id,
             session.model_id,
         )
         session.running_process = run

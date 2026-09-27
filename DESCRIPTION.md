@@ -203,7 +203,7 @@ cline_bot/
 ├── handlers.py             Telegram handlers
 ├── text_utils.py           pure text helpers
 └── logging_setup.py        rotating logs
-tests/                      51 unit tests
+tests/                      87 unit tests
 ```
 
 Two rules keep it maintainable: `ClineClient` is the only module that spawns a
@@ -220,7 +220,7 @@ while the cmdlet works with the rights an ordinary account already has.
 python -m unittest discover -s tests -t .
 ```
 
-51 tests, no network access required. They cover output decoding, process
+87 tests, no network access required. They cover output decoding, process
 termination, the output cap, allowlist and pairing logic, autostart script
 generation, and configuration validation.
 
