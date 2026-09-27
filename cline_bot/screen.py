@@ -36,8 +36,21 @@ $bitmap.Dispose()
 Write-Output "saved"
 """
 
+ACTIVATE_FOREGROUND_SCRIPT = """
+$signature = @'
+[DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
+[DllImport("user32.dll")] public static extern bool SetForegroundWindow(IntPtr hWnd);
+'@
+Add-Type -MemberDefinition $signature -Name Native -Namespace Screen
+$handle = [Screen.Native]::GetForegroundWindow()
+if ($handle -eq [IntPtr]::Zero) { Write-Error "no foreground window"; exit 1 }
+[void][Screen.Native]::SetForegroundWindow($handle)
+Write-Output "focused"
+"""
+
 SEND_KEYS_SCRIPT = """
 Add-Type -AssemblyName System.Windows.Forms
+if ([string]::IsNullOrEmpty($env:PIGEON_KEYS)) { Write-Error "no keys given"; exit 1 }
 [System.Windows.Forms.SendKeys]::SendWait($env:PIGEON_KEYS)
 Write-Output "sent"
 """
@@ -62,7 +75,12 @@ def _run_powershell(script: str, environment: dict, timeout: int) -> str:
     except subprocess.TimeoutExpired:
         process.kill()
         raise ScreenError(f"the screen action timed out after {timeout}s")
-    return (stdout.decode("utf-8", "replace") + stderr.decode("utf-8", "replace")).strip()
+
+    output = (stdout.decode("utf-8", "replace") + stderr.decode("utf-8", "replace")).strip()
+    if process.returncode != 0:
+        # Swallowing this made a failing keystroke look like a delivered one.
+        raise ScreenError(output or "the screen action failed")
+    return output
 
 
 async def capture_screenshot() -> Path:
@@ -82,13 +100,44 @@ async def capture_screenshot() -> Path:
 
 
 async def send_keys(keys: str) -> None:
-    """Type text or press keys on the focused window."""
-    normalized = keys.replace("{", "{{").replace("}", "}}")
+    """Send already-escaped keys to the focused window.
+
+    The string is passed through unchanged: `/key` already wraps the key in
+    braces, and SendKeys needs those. Escaping again here would turn `{ENTER}`
+    into a literal `{{ENTER}}` and type the word instead of pressing it.
+    """
     environment = os.environ.copy()
-    environment["PIGEON_KEYS"] = normalized
+    environment["PIGEON_KEYS"] = keys
+    # A background process has no foreground window of its own, so the
+    # desktop may be locked or another session may hold focus. Re-asserting
+    # the foreground window first makes the keystroke land where the user sees it.
+    await asyncio.to_thread(
+        _run_powershell, ACTIVATE_FOREGROUND_SCRIPT, os.environ.copy(), INPUT_TIMEOUT_SECONDS
+    )
     await asyncio.to_thread(
         _run_powershell, SEND_KEYS_SCRIPT, environment, INPUT_TIMEOUT_SECONDS
     )
+
+
+SUPPORTED_KEYS = (
+    "ENTER", "TAB", "ESC", "SPACE", "BACKSPACE", "DELETE", "HOME", "END",
+    "UP", "DOWN", "LEFT", "RIGHT", "F5", "CTRL+A", "CTRL+C", "CTRL+V",
+)
+
+
+def build_key_sequence(key_name: str) -> str:
+    """Return the SendKeys sequence for a supported key.
+
+    The allowlist matters: SendKeys understands {LAUNCH}, {SLEEP} and other
+    directives, so an unrestricted string from the chat would be able to do
+    more than press a key.
+    """
+    normalized = key_name.strip().upper()
+    if normalized not in SUPPORTED_KEYS:
+        raise ScreenError(
+            f"Unsupported key {key_name}. Try: {', '.join(SUPPORTED_KEYS[:6])}..."
+        )
+    return f"{{{normalized}}}"
 
 
 def escape_for_send_keys(text: str) -> str:

@@ -2,7 +2,7 @@
 
 import unittest
 
-from cline_bot.screen import escape_for_send_keys
+from cline_bot.screen import ScreenError, build_key_sequence, escape_for_send_keys
 
 
 class EscapeForSendKeysTest(unittest.TestCase):
@@ -23,6 +23,27 @@ class EscapeForSendKeysTest(unittest.TestCase):
 
     def test_keeps_emoji_intact(self) -> None:
         self.assertEqual(escape_for_send_keys("\U0001F600"), "\U0001F600")
+
+
+class BuildKeySequenceTest(unittest.TestCase):
+    def test_wraps_the_key_in_braces(self) -> None:
+        self.assertEqual(build_key_sequence("ENTER"), "{ENTER}")
+
+    def test_accepts_a_lowercase_name(self) -> None:
+        self.assertEqual(build_key_sequence("enter"), "{ENTER}")
+
+    def test_allows_a_control_combination(self) -> None:
+        self.assertEqual(build_key_sequence("ctrl+a"), "{CTRL+A}")
+
+    def test_rejects_an_unsupported_key(self) -> None:
+        with self.assertRaises(ScreenError):
+            build_key_sequence("NUKE")
+
+    def test_rejects_a_sendkeys_directive(self) -> None:
+        # SendKeys has directives such as {LAUNCH} that run commands, so the
+        # allowlist has to block anything that is not a plain key.
+        with self.assertRaises(ScreenError):
+            build_key_sequence("{LAUNCH calc}")
 
 
 class ScreenCommandTest(unittest.TestCase):

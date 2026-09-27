@@ -17,7 +17,13 @@ from telegram.ext import ContextTypes
 from .authorization import AuthorizationPolicy
 from .cline_client import ClineClient, ClineRun
 from .config import AppConfig
-from .screen import ScreenError, capture_screenshot, escape_for_send_keys, send_keys
+from .screen import (
+    ScreenError,
+    build_key_sequence,
+    capture_screenshot,
+    escape_for_send_keys,
+    send_keys,
+)
 from .session_registry import ChatSession, SessionRegistry
 from .text_utils import split_into_chunks
 
@@ -196,13 +202,13 @@ class BotHandlers:
         if not context.args:
             await update.effective_message.reply_text("Usage: /key <ENTER|TAB|ESC>")
             return
-        key_name = context.args[0].upper()
+        key_name = context.args[0]
         try:
-            await send_keys(f"{{{key_name}}}")
+            await send_keys(build_key_sequence(key_name))
         except ScreenError as error:
             await update.effective_message.reply_text(f"❌ {error}")
             return
-        await update.effective_message.reply_text(f"🔘 Sent {key_name}.")
+        await update.effective_message.reply_text(f"🔘 Sent {key_name.upper()}.")
 
     async def start_new_session(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
