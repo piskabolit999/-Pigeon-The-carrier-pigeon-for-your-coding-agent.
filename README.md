@@ -1,27 +1,28 @@
 # 🐦 Pigeon
 
-### The carrier pigeon for your coding agent. Send it from the bus. Collect a green build on the way home.
+> Carrier pigeon for your coding agent. Drive the Cline CLI from Telegram on
+> Windows, in the background, and let it survive reboots.
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-51%20passing-brightgreen.svg)](#tests)
-[![Windows](https://img.shields.io/badge/Windows- supported-0078D4?logo=windows)](https://learn.microsoft.com/)
+[![Windows](https://img.shields.io/badge/Windows-0078D4?logo=windows&logoColor=white)](https://learn.microsoft.com/)
 
-**Telegram ↔ [Cline CLI](https://github.com/cline/cline) bridge for Windows.**
-Type a message, the agent works on your machine in the background, and the
-progress streams back into the chat. Pigeon registers itself into Windows
-autostart on first run, so it is always home before you are.
+Send a task from your phone. Pigeon hands it to the **Cline CLI** running on
+your own Windows machine, streams the agent's progress back into the chat, and
+registers itself into autostart on first run — no console window, no setup
+script, no cloud bill.
 
 > 📱 You: *"add type hints to src/api and run the tests"*
-> 😴 You: *sleeps*
-> 🐦 Pigeon: *"Done — exit code 0. 14 files changed."*
+> 😴 You: *closes the laptop*
+> 🐦 Pigeon: *"✅ Done — exit code 0. 14 files changed."*
 
-**No console window. No syntax to learn. No cloud bill.** Just a chat window
-and a coding agent that keeps working after you close the laptop.
+📄 **[Full description →](DESCRIPTION.md)** — the problem it solves, how it
+works end to end, and the reasoning behind the design.
 
 ---
 
-## Why people are sharing it
+## Why people share it
 
 | | |
 |---|---|
@@ -30,29 +31,53 @@ and a coding agent that keeps working after you close the laptop.
 | 🧠 **Remembers the thread** | Follow-up messages continue the same agent session |
 | 🛑 **Actually stops** | Kills the whole process tree, not just the parent |
 | 🔒 **Allowlisted** | Unknown chats get silence, not access |
-| 🪶 **Zero lock-in** | Pure stdlib bridge. Delete the folder, nothing else breaks |
+| 🪶 **Zero lock-in** | Delete the folder and nothing else breaks |
 
-## Install
+## Setup
+
+### 1. Install the agent
+
+```powershell
+npm install -g @cline/cli
+clite auth
+```
+
+Pick a provider. The `cline` provider needs a credit balance; without one the
+agent returns `Insufficient balance`.
+
+### 2. Install Pigeon
 
 ```powershell
 git clone https://github.com/<you>/pigeon.git
 cd pigeon
 pip install -r requirements.txt
-npm install -g @cline/cli          # the agent brain
-clite auth                          # pick a provider
 ```
 
-Put your [BotFather](https://t.me/BotFather) token in `config.json`:
+Requires Python 3.10+ on Windows.
+
+### 3. Create the bot
+
+Message [@BotFather](https://t.me/BotFather) → `/newbot` → copy the token into
+`config.json`:
 
 ```json
 "telegram_bot_token": "123456:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
 
-Add a pairing code, then launch:
+Or keep the token off disk entirely by setting the `CLINE_BOT_TOKEN`
+environment variable, which takes priority over the file.
+
+### 4. Lock it down
 
 ```json
-"pairing_code": "pick-something-long"
+"pairing_code": "pick-something-long",
+"default_cwd": "C:\\Users\\You\\Projects\\my-app",
+"default_mode": "act"
 ```
+
+`plan` only reads and analyses. `act` lets the agent edit files.
+
+### 5. Run
 
 ```powershell
 python run_bot.py
@@ -61,82 +86,109 @@ python run_bot.py
 Send `/pair pick-something-long` to your bot. **Pigeon installs itself into
 autostart at this moment** — nothing else to configure.
 
-> Prefer not to keep the token on disk? Set the `CLINE_BOT_TOKEN` environment
-> variable instead. It takes priority over the file.
-
-📄 **[Full description →](DESCRIPTION.md)** — how it works, what it does, and the
-reasoning behind the design.
-
 ## Commands
 
 | Command | Effect |
 |---|---|
-| *any text* | prompt for the Cline CLI |
-| `/cd <path>` | change working directory (resets session) |
-| `/mode plan\|act` | `plan` = analyze only, `act` = may edit files |
+| *any text* | prompt for the agent |
+| `/cd <path>` | change working directory (resets the session) |
+| `/mode plan\|act` | `plan` analyses only, `act` may edit files |
 | `/new` | force a fresh session |
-| `/status` | directory, mode, session id, busy flag |
-| `/stop` | cancel the running task |
-| `/history` | recent Cline sessions |
-| `/shell <cmd>` | run a PowerShell command (60 s cap) |
-| `/approve on\|off` | auto-approve agent tools |
+| `/status` | directory, mode, session id, busy state |
+
+## How it works
+
+```
+   📱 Telegram                    🖥️ Your Windows machine
+   ┌──────────────┐              ┌─────────────────────────────────────┐
+   │  "add type   │              │  Pigeon (pythonw, no window)       │
+   │   hints and  │ ──polling──► │        │                            │
+   │   run tests" │              │        ▼                            │
+   └──────────────┘              │  ClineClient                        │
+        ▲                        │        │                            │
+        │   streamed output      │        ▼                            │
+        └────────────────────────│  clite --cwd <dir> "<prompt>"       │
+                                 │        │                            │
+                                 │        ▼                            │
+                                 │  Cline agent edits files,          │
+                                 │  runs tests, reports               │
+                                 └─────────────────────────────────────┘
+```
+
+Long polling means no public port, no tunnel and no inbound firewall rule.
+The prompt is passed to `clite` as an argument list, never a shell string.
+After each run Pigeon records the session id, so the next message resumes the
+same conversation.
+
+## Security
+
+Pigeon runs commands on your machine — that is the product. Treat the token
+like a password.
+
+**Controls**
+
+- **Chat allowlist.** Only ids in `allowed_chat_ids` get a reply. Everyone else
+  is ignored silently.
+- **Pairing code.** A new chat must present it once. Remove `pairing_code`
+  from the config afterwards.
+- **No secrets in the repo.** `config.json` is git-ignored; the token can live
+  in an environment variable.
+- **No shell injection.** Prompts go in as an argument list, never a command
+  string. Tested against `&`, `|`, `&&`, `%VARIABLE%` and quote-breakout.
+- **Real termination.** `/stop` kills the process tree. Cancelling the task
+  alone would leave the agent running.
+- **Bounded output.** A runaway agent cannot exhaust memory or flood the chat.
+- **Session ownership.** The bot resumes only sessions it created, so it
+  cannot hijack one you started in your own terminal.
+
+**Limits**
+
+- `/shell` runs arbitrary PowerShell, gated by the allowlist but **not
+  sandboxed**. Do not add strangers.
+- The agent runs with your Windows user privileges — no container, no VM.
+- The token is a bearer credential. Revoke it via @BotFather if it leaks.
+
+## Configuration
+
+| Key | Meaning |
+|---|---|
+| `telegram_bot_token` | Token from BotFather, or use `CLINE_BOT_TOKEN` |
+| `allowed_chat_ids` | Only these chats get a reply |
+| `pairing_code` | Code for `/pair`, `null` disables pairing |
+| `default_cwd` | Directory the agent works in |
+| `default_mode` | `act` or `plan` |
+| `auto_approve` | Let the agent approve its own tools |
+| `timeout_seconds` | Maximum length of a single task |
+| `shell_timeout_seconds` | Limit for `/shell` |
+| `thinking_level` | `none`, `low`, `medium`, `high`, `xhigh` |
+| `clite_command` | Path to the Cline CLI |
+| `max_message_length` | Chunk size for outgoing messages |
+| `log_file` | Where to write logs |
 
 ## Architecture
 
 ```
-run_bot.py                 entry point
+run_bot.py                  entry point
+config.json                 settings
 cline_bot/
-├── app.py                 composition root + autostart bootstrap
-├── autostart.py           Task Scheduler registration (PowerShell)
-├── config.py              loading + validation
-├── authorization.py       allowlist & pairing
-├── session_registry.py    per-chat state
-├── cline_client.py        process control (ClineRun)
-├── handlers.py            Telegram handlers
-├── text_utils.py          pure helpers
-└── logging_setup.py       rotating logs
+├── app.py                  composition root, starts polling
+├── autostart.py            Task Scheduler registration
+├── config.py               loading and validation
+├── authorization.py        allowlist and pairing
+├── session_registry.py     per-chat state
+├── cline_client.py         process control
+├── handlers.py             Telegram handlers
+├── text_utils.py           pure text helpers
+└── logging_setup.py        rotating logs
+tests/                      51 unit tests
 ```
 
-Two rules keep it maintainable:
+Two rules keep it maintainable: `ClineClient` is the only module that spawns a
+process, and handlers never touch process APIs directly — they orchestrate,
+the client executes.
 
-1. **`ClineClient` owns every external process.** No other module spawns one.
-2. **Handlers never touch `asyncio` process APIs.** They orchestrate; the
-   client executes.
-
-### Why PowerShell and not `schtasks`
-
-`schtasks /Create` demands elevation even for a per-user logon task, so the bot
-could not install itself on a standard account. `Register-ScheduledTask`
-succeeds with the rights a normal user already has. Tests assert the generated
-script, including that Windows path separators are not escaped.
-
-## Security
-
-### What this bot is
-
-A remote code execution bridge. It runs commands on your machine from a chat
-app. That is the entire point, and it means the security model has to be
-serious.
-
-### Controls
-
-| Control | Implementation |
-|---|---|
-| **Chat allowlist** | Only ids in `allowed_chat_ids` get a reply. Everything else is ignored. |
-| **Pairing code** | First contact requires `/pair <code>`. Persisted, then the code should be removed. |
-| **No secrets in repo** | `config.json` is git-ignored; token can come from the environment. |
-| **Command injection** | Arguments are passed as an argv list, never a shell string. Verified against `&`, `\|`, `&&`, `%VAR%`, and quote-breakout payloads. |
-| **Process termination** | `taskkill /T` kills the whole tree. Cancelling a task alone would leak the agent. |
-| **Output cap** | 400 KB ceiling; a runaway agent cannot exhaust memory or flood the chat. Truncating also stops the process, otherwise a full pipe would block forever. |
-| **Session ownership** | The bot only resumes sessions it created itself, so it cannot hijack a session you started in your own terminal. |
-
-### Honest limitations
-
-- `/shell` executes arbitrary PowerShell for allowlisted chats. It is gated by
-  the allowlist, not sandboxed. Do not add strangers.
-- Your Telegram token is a bearer credential. Revoke it via @BotFather if it leaks.
-- The Cline agent runs with your Windows user privileges. `plan` mode is the
-  safe choice for untrusted instructions.
+Autostart uses `Register-ScheduledTask` rather than `schtasks`, because
+`schtasks /Create` requires elevation even for a per-user logon task.
 
 ## Tests
 
@@ -144,18 +196,19 @@ serious.
 python -m unittest discover -s tests -t .
 ```
 
-51 tests, no network required. They cover the decoding path, process
+51 tests, no network required. They cover output decoding, process
 termination, the output cap, allowlist and pairing logic, autostart script
 generation, and config validation.
 
 ## Troubleshooting
 
-| Symptom | Fix |
+| Symptom | Cause |
 |---|---|
-| `Insufficient balance` | The `cline` provider has no credits. Run `clite auth <other-provider>`. |
-| Bot silent | Check `logs/bot.log`. Unauthorized chats get no reply by design. |
+| `Insufficient balance` | The `cline` provider has no credits. Run `clite auth <other>`. |
+| Bot never answers | Check `logs/bot.log`. Unauthorized chats are ignored by design. |
+| Nothing after `/pair` | `pairing_code` is `null`, or the code is wrong. |
 | Not starting after reboot | `Get-ScheduledTask -TaskName PigeonTelegramBot` |
-| Nothing happens on `/pair` | `pairing_code` is `null`, or wrong code. |
+| Agent refuses to work | Provider not authenticated. Run `clite auth`. |
 
 ## Uninstall
 
@@ -163,72 +216,14 @@ generation, and config validation.
 powershell -ExecutionPolicy Bypass -File .\uninstall_autostart.ps1
 ```
 
-## Description
-
-Control your Cline CLI coding agent from Telegram. Send a task from your
-phone, Pigeon runs it on your Windows machine in the background, streams the
-progress back into the chat, and installs itself into autostart on first run.
-
-```
-🐦 Control your Cline CLI agent from Telegram. Runs on your Windows machine in
-the background, streams progress live, installs its own autostart.
-```
-
-Shorter alternates:
-
-| Angle | Description |
-|---|---|
-| Benefit | `Send coding tasks from your phone. Pigeon runs Cline CLI on your machine while you do something else.` |
-| Technical | `Telegram bridge for the Cline CLI on Windows. Background execution, live streaming, session memory, autostart.` |
-| One-liner | `Drive your coding agent from Telegram. It keeps working after you close the laptop.` |
-| Playful | `A carrier pigeon for your coding agent. Telegram in, finished build out.` |
-
-## Publishing
-
-### About (short description, 80 chars visible)
-
-```
-🐦 Carrier pigeon for your coding agent. Cline CLI over Telegram, on Windows.
-```
-
-Alternates if you want a different angle:
-
-| Angle | Caption |
-|---|---|
-| Benefit | `Send it a task from your phone. Wake up to a finished build.` |
-| Technical | `Telegram ↔ Cline CLI bridge for Windows. Installs its own autostart.` |
-| Bold | `Your coding agent, delivered. No console window, no cloud bill.` |
-| Playful | `A bird that carries your refactors. Telegram + Cline CLI on Windows.` |
-
-### Repository topics
-
-```
-telegram-bot  cline  cline-cli  ai-agent  coding-agent
-ai-coding-assistant  automation  remote-execution  windows  python
-chatops  devtools  self-hosted
-```
-
-### Launch post
-
-> **Pigeon 🐦 — I stopped babysitting my coding agent.**
->
-> I wanted to kick off a refactor from my phone, close the laptop, and find a
-> finished build waiting for me. So I built a bridge: you message a Telegram
-> bot, it drives the Cline CLI on your Windows machine, and the progress
-> streams back into the chat.
->
-> - 📱 Any message is a prompt — no syntax to learn
-> - 🏠 Installs itself into Windows autostart on first run
-> - 🪟 Runs under `pythonw.exe` — no console window, no tray icon
-> - 🧠 Follow-up messages continue the same agent session
-> - 🛑 `/stop` kills the whole process tree, not just the parent
-> - 🔒 Chat allowlist + pairing code; unknown chats get silence
->
-> Windows, Python 3.10+, MIT. 51 tests, no cloud bill.
-> [github.com/&lt;you&gt;/pigeon](https://github.com/&lt;you&gt;/pigeon)
-
----
+Removes the scheduled task and stops the process. Remove the agent itself with
+`npm uninstall -g @cline/cli`.
 
 ## License
 
 MIT
+
+| `/stop` | cancel the running task |
+| `/history` | recent agent sessions |
+| `/shell <cmd>` | run a PowerShell command (60 s cap) |
+| `/approve on\|off` | toggle automatic tool approval |
