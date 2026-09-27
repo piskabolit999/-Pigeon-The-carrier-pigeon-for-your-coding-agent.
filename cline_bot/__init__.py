@@ -1,4 +1,4 @@
-"""Telegram bot that forwards messages to the Cline CLI."""
+"""Pigeon - a Telegram bot that forwards messages to the Cline CLI."""
 
 __all__ = ["__version__"]
 

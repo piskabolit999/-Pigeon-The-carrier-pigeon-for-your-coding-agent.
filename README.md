@@ -1,52 +1,54 @@
-# 🛡️ ClineRemote
+# 🐦 Pigeon
 
-### Steer Cline from your phone. Sleep through the refactor. Wake up to a green build.
+### The carrier pigeon for your coding agent. Send it from the bus. Collect a green build on the way home.
 
 [![Python](https://img.shields.io/badge/python-3.10%2B-blue.svg)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-41%20passing-brightgreen.svg)](#tests)
+[![Tests](https://img.shields.io/badge/tests-51%20passing-brightgreen.svg)](#tests)
+[![Windows](https://img.shields.io/badge/Windows- supported-0078D4?logo=windows)](https://learn.microsoft.com/)
 
-A Telegram bot that pipes whatever you type straight into the **Cline CLI** on
-your Windows machine, streams the agent's progress back into the chat, and
-installs itself into Windows autostart on first run.
+**Telegram ↔ [Cline CLI](https://github.com/cline/cline) bridge for Windows.**
+Type a message, the agent works on your machine in the background, and the
+progress streams back into the chat. Pigeon registers itself into Windows
+autostart on first run, so it is always home before you are.
 
-> Send *"add type hints to src/api"* from the bus, wake up to a reviewed diff.
+> 📱 You: *"add type hints to src/api and run the tests"*
+> 😴 You: *sleeps*
+> 🐦 Pigeon: *"Done — exit code 0. 14 files changed."*
 
-**Hardened by design.** Chat allowlist, secret-free config, process-tree
-termination, output caps, and a session-ownership check so the bot can never
-resume someone else's session. See [Security](#security).
+**No console window. No syntax to learn. No cloud bill.** Just a chat window
+and a coding agent that keeps working after you close the laptop.
 
 ---
 
-## What it does
+## Why people are sharing it
 
 | | |
 |---|---|
-| 📨 **Any message is a prompt** | No syntax, no commands to learn |
-| 📡 **Streams progress live** | Watch the agent work, not a black box |
-| 🧠 **Keeps conversation context** | Follow-ups continue the same session |
-| 🚀 **Self-installing autostart** | Registers a Task Scheduler entry by itself |
-| 🪟 **Fully hidden** | Runs under `pythonw.exe`, no console window |
+| 🏠 **Survives reboots** | Installs its own Task Scheduler entry, restarts on crash |
+| 🪟 **Truly invisible** | Runs under `pythonw.exe` — no window, no tray icon, no noise |
+| 🧠 **Remembers the thread** | Follow-up messages continue the same agent session |
 | 🛑 **Actually stops** | Kills the whole process tree, not just the parent |
-| 🔒 **Allowlisted** | Unknown chats get silence |
+| 🔒 **Allowlisted** | Unknown chats get silence, not access |
+| 🪶 **Zero lock-in** | Pure stdlib bridge. Delete the folder, nothing else breaks |
 
-## Quick start
+## Install
 
 ```powershell
-git clone https://github.com/<you>/cline-remote.git
-cd cline-remote
+git clone https://github.com/<you>/pigeon.git
+cd pigeon
 pip install -r requirements.txt
-npm install -g @cline/cli          # the agent backend
-clite auth                          # authorize a provider
+npm install -g @cline/cli          # the agent brain
+clite auth                          # pick a provider
 ```
 
-Put your BotFather token in `config.json`:
+Put your [BotFather](https://t.me/BotFather) token in `config.json`:
 
 ```json
 "telegram_bot_token": "123456:AAExxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ```
 
-Set a pairing code, then run it:
+Add a pairing code, then launch:
 
 ```json
 "pairing_code": "pick-something-long"
@@ -56,9 +58,10 @@ Set a pairing code, then run it:
 python run_bot.py
 ```
 
-Send `/pair pick-something-long` to your bot. Done — it now survives reboots.
+Send `/pair pick-something-long` to your bot. **Pigeon installs itself into
+autostart at this moment** — nothing else to configure.
 
-> Prefer not to store the token on disk? Set the `CLINE_BOT_TOKEN` environment
+> Prefer not to keep the token on disk? Set the `CLINE_BOT_TOKEN` environment
 > variable instead. It takes priority over the file.
 
 ## Commands
@@ -148,7 +151,7 @@ generation, and config validation.
 |---|---|
 | `Insufficient balance` | The `cline` provider has no credits. Run `clite auth <other-provider>`. |
 | Bot silent | Check `logs/bot.log`. Unauthorized chats get no reply by design. |
-| Not starting after reboot | `Get-ScheduledTask -TaskName ClineTelegramBot` |
+| Not starting after reboot | `Get-ScheduledTask -TaskName PigeonTelegramBot` |
 | Nothing happens on `/pair` | `pairing_code` is `null`, or wrong code. |
 
 ## Uninstall
@@ -156,6 +159,24 @@ generation, and config validation.
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\uninstall_autostart.ps1
 ```
+
+## Publishing
+
+Repository topics (set these in the repo settings, or with
+`gh repo edit --add-topic`):
+
+```
+telegram-bot  cline  cline-cli  ai-agent  coding-agent
+ai-coding-assistant  automation  remote-execution  windows  python
+chatops  devtools  self-hosted
+```
+
+One-line description for the repo "About" field:
+
+> 🐦 Carrier pigeon for your coding agent. Drive Cline CLI from Telegram on
+> Windows, in the background, with autostart handled.
+
+---
 
 ## License
 

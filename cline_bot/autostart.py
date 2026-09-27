@@ -15,8 +15,8 @@ import sys
 from pathlib import Path
 
 CREATE_NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0)
-TASK_NAME = "ClineTelegramBot"
-TASK_DESCRIPTION = "Background Telegram bridge to Cline CLI"
+TASK_NAME = "PigeonTelegramBot"
+TASK_DESCRIPTION = "Pigeon - Telegram bridge to the Cline CLI"
 RESTART_COUNT = 999
 RESTART_INTERVAL_MINUTES = 1
 REGISTRATION_TIMEOUT_SECONDS = 60
