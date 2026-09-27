@@ -50,18 +50,24 @@ class ClineRun:
         total_characters = 0
         has_truncated = False
 
-        async for raw_line in self._process.stdout:
-            line = strip_ansi_codes(raw_line.decode(OUTPUT_ENCODING, "replace"))
-            line = line.rstrip()
-            if not line.strip():
-                continue
-            # Bound the buffer so a runaway agent cannot exhaust memory.
-            total_characters += len(line)
-            if total_characters > MAX_OUTPUT_CHARACTERS:
-                collected.append(TRUNCATION_NOTICE)
-                has_truncated = True
-                break
-            collected.append(line)
+        try:
+            async for raw_line in self._process.stdout:
+                line = strip_ansi_codes(raw_line.decode(OUTPUT_ENCODING, "replace"))
+                line = line.rstrip()
+                if not line.strip():
+                    continue
+                # Bound the buffer so a runaway agent cannot exhaust memory.
+                total_characters += len(line)
+                if total_characters > MAX_OUTPUT_CHARACTERS:
+                    collected.append(TRUNCATION_NOTICE)
+                    has_truncated = True
+                    break
+                collected.append(line)
+        except asyncio.CancelledError:
+            # The reader is torn down mid-await, so close the transport
+            # explicitly to avoid leaking the pipe handle.
+            self._close_stream()
+            raise
 
         # Stop reading once the limit is hit. Without this the process keeps
         # running and blocks forever on a full pipe, so wait() never returns.
@@ -69,6 +75,15 @@ class ClineRun:
             self.terminate()
 
         return collected, await self._process.wait()
+
+    def _close_stream(self) -> None:
+        """Release the stdout pipe, ignoring an already closed stream."""
+        if self._process.stdout is None:
+            return
+        try:
+            self._process.stdout.close()
+        except (OSError, RuntimeError) as error:
+            LOGGER.debug("Could not close the output stream: %s", error)
 
     def terminate(self) -> None:
         """Kill the process tree, because clite spawns node child processes."""

@@ -81,7 +81,7 @@ Send `/pair pick-something-long` to your bot. Done — it now survives reboots.
 run_bot.py                 entry point
 cline_bot/
 ├── app.py                 composition root + autostart bootstrap
-├── autostart.py           Task Scheduler registration
+├── autostart.py           Task Scheduler registration (PowerShell)
 ├── config.py              loading + validation
 ├── authorization.py       allowlist & pairing
 ├── session_registry.py    per-chat state
@@ -96,6 +96,13 @@ Two rules keep it maintainable:
 1. **`ClineClient` owns every external process.** No other module spawns one.
 2. **Handlers never touch `asyncio` process APIs.** They orchestrate; the
    client executes.
+
+### Why PowerShell and not `schtasks`
+
+`schtasks /Create` demands elevation even for a per-user logon task, so the bot
+could not install itself on a standard account. `Register-ScheduledTask`
+succeeds with the rights a normal user already has. Tests assert the generated
+script, including that Windows path separators are not escaped.
 
 ## Security
 
@@ -114,7 +121,7 @@ serious.
 | **No secrets in repo** | `config.json` is git-ignored; token can come from the environment. |
 | **Command injection** | Arguments are passed as an argv list, never a shell string. Verified against `&`, `\|`, `&&`, `%VAR%`, and quote-breakout payloads. |
 | **Process termination** | `taskkill /T` kills the whole tree. Cancelling a task alone would leak the agent. |
-| **Output cap** | 400 KB ceiling; a runaway agent cannot exhaust memory or flood the chat. |
+| **Output cap** | 400 KB ceiling; a runaway agent cannot exhaust memory or flood the chat. Truncating also stops the process, otherwise a full pipe would block forever. |
 | **Session ownership** | The bot only resumes sessions it created itself, so it cannot hijack a session you started in your own terminal. |
 
 ### Honest limitations
@@ -131,9 +138,9 @@ serious.
 python -m unittest discover -s tests -t .
 ```
 
-41 tests, no network required. They cover the decoding path, process
-termination, the output cap, allowlist and pairing logic, and config
-validation.
+51 tests, no network required. They cover the decoding path, process
+termination, the output cap, allowlist and pairing logic, autostart script
+generation, and config validation.
 
 ## Troubleshooting
 
