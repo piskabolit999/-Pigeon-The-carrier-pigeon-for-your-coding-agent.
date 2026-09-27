@@ -15,6 +15,14 @@ from telegram.error import TelegramError
 from telegram.ext import ContextTypes
 
 from .authorization import AuthorizationPolicy
+from .cline_app import (
+    ClineAppError,
+    find_executable as find_cline_executable,
+    find_window_process_id,
+    focus as focus_cline_window,
+    is_running as is_cline_running,
+    launch as start_cline_app,
+)
 from .cline_client import ClineClient, ClineRun
 from .config import AppConfig
 from .screen import (
@@ -48,6 +56,7 @@ HELP_TEXT = (
     "/stop — cancel the running task\n"
     "/history — list recent Cline sessions\n"
     "/shell <command> — run a PowerShell command\n"
+    "/cline [text] — open Cline, or focus it and send a prompt\n"
     "/screen — send a screenshot of the desktop\n"
     "/type <text> — type into the focused window\n"
     "/click <x> <y> [left|right|middle] [clicks] — click the screen\n"
@@ -256,6 +265,52 @@ class BotHandlers:
         button = arguments[2].lower() if len(arguments) > 2 else "left"
         clicks = int(arguments[3]) if len(arguments) > 3 and arguments[3].isdigit() else 1
         return x, y, button, clicks
+
+    async def open_cline_app(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Open the Cline desktop app, or focus it when it is already open.
+
+        `/cline` alone brings the window forward. `/cline <text>` also types
+        the text into the window and submits it, which hands a task over from
+        the chat to the desktop session.
+        """
+        if await self._resolve_session(update, context) is None:
+            return
+        prompt = " ".join(context.args)
+
+        try:
+            was_open = self._open_or_focus_cline()
+        except ClineAppError as error:
+            await update.effective_message.reply_text(f"❌ {error}")
+            return
+
+        state = "already open, focused" if was_open else "started"
+        if not prompt:
+            await update.effective_message.reply_text(f"🪟 Cline {state}.")
+            return
+
+        try:
+            await send_keys(escape_for_send_keys(prompt))
+            await send_keys(build_key_sequence("ENTER"))
+        except ScreenError as error:
+            await update.effective_message.reply_text(f"🪟 Cline {state}, but: {error}")
+            return
+        await update.effective_message.reply_text(f"🪟 Cline {state}, prompt sent.")
+
+    @staticmethod
+    def _open_or_focus_cline() -> bool:
+        """Start the app if needed, then focus it. Returns True if it was open."""
+        was_open = is_cline_running()
+        if not was_open:
+            executable = find_cline_executable()
+            if executable is None:
+                raise ClineAppError("cline-app.exe was not found on this machine")
+            start_cline_app(executable)
+        process_id = find_window_process_id()
+        if process_id is not None:
+            focus_cline_window(process_id)
+        return was_open
 
     async def press_key(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Send a keystroke, for example ENTER or TAB."""

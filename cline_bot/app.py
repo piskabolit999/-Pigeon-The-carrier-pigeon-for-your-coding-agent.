@@ -37,6 +37,7 @@ COMMAND_ROUTES = {
     "history": "show_history",
     "use": "adopt_session",
     "shell": "run_shell_command",
+    "cline": "open_cline_app",
     "screen": "take_screenshot",
     "type": "type_on_screen",
     "click": "click_screen",
