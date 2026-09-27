@@ -162,8 +162,22 @@ powershell -ExecutionPolicy Bypass -File .\uninstall_autostart.ps1
 
 ## Publishing
 
-Repository topics (set these in the repo settings, or with
-`gh repo edit --add-topic`):
+### About (short description, 80 chars visible)
+
+```
+🐦 Carrier pigeon for your coding agent. Cline CLI over Telegram, on Windows.
+```
+
+Alternates if you want a different angle:
+
+| Angle | Caption |
+|---|---|
+| Benefit | `Send it a task from your phone. Wake up to a finished build.` |
+| Technical | `Telegram ↔ Cline CLI bridge for Windows. Installs its own autostart.` |
+| Bold | `Your coding agent, delivered. No console window, no cloud bill.` |
+| Playful | `A bird that carries your refactors. Telegram + Cline CLI on Windows.` |
+
+### Repository topics
 
 ```
 telegram-bot  cline  cline-cli  ai-agent  coding-agent
@@ -171,10 +185,24 @@ ai-coding-assistant  automation  remote-execution  windows  python
 chatops  devtools  self-hosted
 ```
 
-One-line description for the repo "About" field:
+### Launch post
 
-> 🐦 Carrier pigeon for your coding agent. Drive Cline CLI from Telegram on
-> Windows, in the background, with autostart handled.
+> **Pigeon 🐦 — I stopped babysitting my coding agent.**
+>
+> I wanted to kick off a refactor from my phone, close the laptop, and find a
+> finished build waiting for me. So I built a bridge: you message a Telegram
+> bot, it drives the Cline CLI on your Windows machine, and the progress
+> streams back into the chat.
+>
+> - 📱 Any message is a prompt — no syntax to learn
+> - 🏠 Installs itself into Windows autostart on first run
+> - 🪟 Runs under `pythonw.exe` — no console window, no tray icon
+> - 🧠 Follow-up messages continue the same agent session
+> - 🛑 `/stop` kills the whole process tree, not just the parent
+> - 🔒 Chat allowlist + pairing code; unknown chats get silence
+>
+> Windows, Python 3.10+, MIT. 51 tests, no cloud bill.
+> [github.com/&lt;you&gt;/pigeon](https://github.com/&lt;you&gt;/pigeon)
 
 ---
 
