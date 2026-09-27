@@ -38,6 +38,21 @@ class SessionRegistryTest(unittest.TestCase):
 
         self.assertIs(first, second)
 
+    def test_registers_the_model_command(self) -> None:
+        # A model can only be switched from the chat, so the command has to
+        # be reachable like every other one.
+        from cline_bot.app import COMMAND_ROUTES
+
+        self.assertIn("model", COMMAND_ROUTES)
+
+    def test_session_starts_without_a_model(self) -> None:
+        session = SessionRegistry(
+            build_config(str(Path(tempfile.gettempdir())))
+        ).get_or_create(EXAMPLE_CHAT_ID)
+
+        # None means "let the provider decide", not a hard-coded model.
+        self.assertIsNone(session.model_id)
+
     def test_keeps_chats_isolated(self) -> None:
         registry = SessionRegistry(build_config(str(Path(tempfile.gettempdir()))))
 

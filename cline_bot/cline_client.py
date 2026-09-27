@@ -146,6 +146,7 @@ class ClineClient:
         agent_mode: str,
         is_auto_approved: bool,
         session_id: Optional[str] = None,
+        model_id: Optional[str] = None,
     ) -> List[str]:
         """Compose the CLI argument list for a single run."""
         arguments = self._launcher + [
@@ -159,6 +160,10 @@ class ClineClient:
             arguments.append("--plan")
         if session_id:
             arguments += ["--id", session_id]
+        # Omitting the flag keeps whatever the provider has configured, so the
+        # bot never silently overrides a model the user chose in the CLI.
+        if model_id:
+            arguments += ["--model", model_id]
         return arguments
 
     def _build_environment(self) -> dict:
@@ -175,10 +180,16 @@ class ClineClient:
         agent_mode: str,
         is_auto_approved: bool,
         session_id: Optional[str] = None,
+        model_id: Optional[str] = None,
     ) -> ClineRun:
         """Spawn the CLI for a prompt and return a handle to the run."""
         arguments = self.build_command(
-            prompt, working_directory, agent_mode, is_auto_approved, session_id
+            prompt,
+            working_directory,
+            agent_mode,
+            is_auto_approved,
+            session_id,
+            model_id,
         )
         process = await asyncio.create_subprocess_exec(
             *arguments,

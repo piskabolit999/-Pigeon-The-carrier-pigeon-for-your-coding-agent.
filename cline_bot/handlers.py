@@ -32,6 +32,7 @@ HELP_TEXT = (
     "Commands:\n"
     "/cd <path> — change the working directory\n"
     "/mode plan|act — switch the agent mode\n"
+    "/model <id> — switch the model, /model default follows the provider\n"
     "/new — start a fresh Cline session\n"
     "/status — show the current state\n"
     "/stop — cancel the running task\n"
@@ -90,6 +91,10 @@ class BotHandlers:
     # ----------------------------------------------------------------- #
     # Commands
     # ----------------------------------------------------------------- #
+    async def pair(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Authorize a new chat using the configured pairing code."""
+        await self._resolve_session(update, context)
+
     async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if await self._resolve_session(update, context) is None:
             return
@@ -132,6 +137,26 @@ class BotHandlers:
             session.agent_mode = requested_mode
             session.cline_session_id = None
         await update.effective_message.reply_text(f"🧩 agent mode: {session.agent_mode}")
+
+    async def change_model(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        session = await self._resolve_session(update, context)
+        if session is None:
+            return
+        if not context.args:
+            await update.effective_message.reply_text(
+                f"Current model: {session.model_id or 'provider default'}\n\n"
+                "Usage: /model <model-id>, or /model default to follow the "
+                "provider setting."
+            )
+            return
+
+        requested_model = " ".join(context.args)
+        session.model_id = None if requested_model == "default" else requested_model
+        # The CLI binds a model to a session, so a new one is required.
+        session.cline_session_id = None
+        await update.effective_message.reply_text(
+            f"🧠 model: {session.model_id or 'provider default'}"
+        )
 
     async def start_new_session(
         self, update: Update, context: ContextTypes.DEFAULT_TYPE
@@ -289,6 +314,7 @@ class BotHandlers:
             session.agent_mode,
             session.is_auto_approved,
             session.cline_session_id,
+            session.model_id,
         )
         session.running_process = run
         output_task = asyncio.create_task(run.collect_output())

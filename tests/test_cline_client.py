@@ -48,6 +48,23 @@ class BuildCommandTest(unittest.TestCase):
 
         self.assertEqual(arguments[arguments.index("--auto-approve") + 1], "false")
 
+    def test_passes_the_requested_model(self) -> None:
+        arguments = build_client().build_command(
+            "x", EXAMPLE_DIRECTORY, "act", True, None, "anthropic/claude-sonnet-4"
+        )
+
+        self.assertEqual(
+            arguments[arguments.index("--model") + 1], "anthropic/claude-sonnet-4"
+        )
+
+    def test_omits_model_flag_for_the_provider_default(self) -> None:
+        # The bot must not override a model the user set in the CLI.
+        arguments = build_client().build_command(
+            "x", EXAMPLE_DIRECTORY, "act", True
+        )
+
+        self.assertNotIn("--model", arguments)
+
     def test_continues_an_existing_session(self) -> None:
         arguments = build_client().build_command(
             "x", EXAMPLE_DIRECTORY, "act", True, "session-1"

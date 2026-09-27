@@ -27,8 +27,10 @@ EXIT_CODE_INVALID_CONFIGURATION = 2
 COMMAND_ROUTES = {
     "start": "start",
     "help": "start",
+    "pair": "pair",
     "cd": "change_directory",
     "mode": "change_mode",
+    "model": "change_model",
     "new": "start_new_session",
     "status": "show_status",
     "stop": "stop_running_task",

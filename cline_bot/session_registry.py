@@ -20,6 +20,7 @@ class ChatSession:
     working_directory: str
     agent_mode: str
     is_auto_approved: bool
+    model_id: Optional[str] = None
     is_busy: bool = False
     running_process: Optional[ClineRun] = field(default=None, repr=False)
     running_output_task: Optional[asyncio.Task] = field(default=None, repr=False)
@@ -36,6 +37,7 @@ class ChatSession:
                 "Current session state",
                 f"directory: {self.working_directory}",
                 f"agent mode: {self.agent_mode}",
+                f"model: {self.model_id or 'provider default'}",
                 f"cline session: {self.cline_session_id or '(new)'}",
                 f"auto approve: {self.is_auto_approved}",
                 f"busy: {self.is_busy}",
