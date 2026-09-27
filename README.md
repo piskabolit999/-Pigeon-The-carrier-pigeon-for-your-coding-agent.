@@ -64,6 +64,9 @@ autostart at this moment** — nothing else to configure.
 > Prefer not to keep the token on disk? Set the `CLINE_BOT_TOKEN` environment
 > variable instead. It takes priority over the file.
 
+📄 **[Full description →](DESCRIPTION.md)** — how it works, what it does, and the
+reasoning behind the design.
+
 ## Commands
 
 | Command | Effect |
