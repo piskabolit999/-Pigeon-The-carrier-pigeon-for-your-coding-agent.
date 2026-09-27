@@ -17,6 +17,7 @@ from .cline_client import ClineClient
 from .config import AppConfig, ConfigurationError, load_config
 from .handlers import BotHandlers
 from .logging_setup import configure_logging
+from .polling import run_polling_forever
 from .session_registry import SessionRegistry
 
 LOGGER = logging.getLogger(__name__)
@@ -77,7 +78,7 @@ def main() -> None:
     register_error_handler(application)
 
     LOGGER.info("Bot started, polling for updates")
-    application.run_polling(drop_pending_updates=True, close_loop=False)
+    run_polling_forever(application, drop_pending_updates=True)
 
 
 def install_autostart_if_needed() -> None:

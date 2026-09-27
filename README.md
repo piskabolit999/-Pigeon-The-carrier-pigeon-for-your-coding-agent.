@@ -95,6 +95,10 @@ autostart at this moment** — nothing else to configure.
 | `/mode plan\|act` | `plan` analyses only, `act` may edit files |
 | `/new` | force a fresh session |
 | `/status` | directory, mode, session id, busy state |
+| `/stop` | cancel the running task |
+| `/history` | recent agent sessions |
+| `/shell <cmd>` | run a PowerShell command (60 s cap) |
+| `/approve on\|off` | toggle automatic tool approval |
 
 ## How it works
 
@@ -177,10 +181,11 @@ cline_bot/
 ├── authorization.py        allowlist and pairing
 ├── session_registry.py     per-chat state
 ├── cline_client.py         process control
+├── polling.py              polling lifecycle (Python 3.12+ compatible)
 ├── handlers.py             Telegram handlers
 ├── text_utils.py           pure text helpers
 └── logging_setup.py        rotating logs
-tests/                      51 unit tests
+tests/                      56 unit tests
 ```
 
 Two rules keep it maintainable: `ClineClient` is the only module that spawns a
@@ -190,15 +195,19 @@ the client executes.
 Autostart uses `Register-ScheduledTask` rather than `schtasks`, because
 `schtasks /Create` requires elevation even for a per-user logon task.
 
+`polling.py` drives the polling lifecycle through the async API instead of
+`Application.run_polling`, which calls `asyncio.get_event_loop()` and fails on
+Python 3.12 and newer with `RuntimeError: There is no current event loop`.
+
 ## Tests
 
 ```powershell
 python -m unittest discover -s tests -t .
 ```
 
-51 tests, no network required. They cover output decoding, process
+56 tests, no network required. They cover output decoding, process
 termination, the output cap, allowlist and pairing logic, autostart script
-generation, and config validation.
+generation, the polling lifecycle, and config validation.
 
 ## Troubleshooting
 
@@ -223,7 +232,3 @@ Removes the scheduled task and stops the process. Remove the agent itself with
 
 MIT
 
-| `/stop` | cancel the running task |
-| `/history` | recent agent sessions |
-| `/shell <cmd>` | run a PowerShell command (60 s cap) |
-| `/approve on\|off` | toggle automatic tool approval |
