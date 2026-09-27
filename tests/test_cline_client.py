@@ -1,8 +1,11 @@
 """Unit tests for the Cline CLI command construction and history parsing."""
 
+import json
+import tempfile
 import unittest
+from pathlib import Path
 
-from cline_bot.cline_client import ClineClient, ClineClientError
+from cline_bot.cline_client import MAX_TRANSCRIPT_EXCERPTS, ClineClient, ClineClientError
 
 EXAMPLE_COMMAND = "clite"
 EXAMPLE_TIMEOUT = 120
@@ -91,6 +94,77 @@ class BuildCommandTest(unittest.TestCase):
         )
 
         self.assertNotIn("--model", arguments)
+
+
+class SessionContextTest(unittest.TestCase):
+    """Reading a stored session is the only way to continue one from a bot."""
+
+    def _write_session(self, messages):
+        directory = Path(tempfile.mkdtemp())
+        path = directory / "session.json"
+        path.write_text(
+            json.dumps({"messages": messages}), encoding="utf-8"
+        )
+        return path
+
+    def _client_with(self, messages):
+        client = build_client()
+        path = self._write_session(messages)
+        client._find_messages_path = lambda session_id: path
+        return client
+
+    def test_includes_prose_from_both_roles(self) -> None:
+        client = self._client_with(
+            [
+                {"role": "user", "content": [{"type": "text", "text": "add tests"}]},
+                {
+                    "role": "assistant",
+                    "content": [{"type": "text", "text": "added three"}],
+                },
+            ]
+        )
+
+        context = client.session_context("abc")
+
+        self.assertIn("add tests", context)
+        self.assertIn("added three", context)
+
+    def test_skips_tool_call_blocks(self) -> None:
+        # Tool traffic dominates a stored session and is not useful context.
+        client = self._client_with(
+            [
+                {
+                    "role": "assistant",
+                    "content": [
+                        {"type": "tool_use", "name": "editor", "input": {}},
+                        {"type": "text", "text": "done"},
+                    ],
+                }
+            ]
+        )
+
+        context = client.session_context("abc")
+
+        self.assertIn("done", context)
+        self.assertNotIn("tool_use", context)
+
+    def test_returns_empty_for_an_unknown_session(self) -> None:
+        client = build_client()
+        client._find_messages_path = lambda session_id: None
+
+        self.assertEqual(client.session_context("missing"), "")
+
+    def test_keeps_only_the_recent_excerpts(self) -> None:
+        messages = [
+            {"role": "user", "content": [{"type": "text", "text": f"note {index}"}]}
+            for index in range(MAX_TRANSCRIPT_EXCERPTS + 10)
+        ]
+        client = self._client_with(messages)
+
+        context = client.session_context("abc")
+
+        self.assertNotIn("note 0", context)
+        self.assertIn(f"note {MAX_TRANSCRIPT_EXCERPTS + 9}", context)
 
 
 class ParseHistoryTest(unittest.TestCase):

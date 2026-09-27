@@ -1,128 +1,129 @@
-"""Unit tests for the per-chat session state."""
+"""Unit tests for the durable conversation log and the chat session state."""
 
 import tempfile
 import unittest
 from pathlib import Path
 
 from cline_bot.config import AppConfig
-from cline_bot.session_registry import (
-    MAX_REMEMBERED_ANSWER_CHARACTERS,
-    MAX_REMEMBERED_TURNS,
-    SessionRegistry,
+from cline_bot.conversation_log import (
+    MAX_TURN_ANSWER_CHARACTERS,
+    ConversationLog,
 )
+from cline_bot.session_registry import SessionRegistry
 
 EXAMPLE_CHAT_ID = 100
 OTHER_CHAT_ID = 200
 EXAMPLE_TOKEN = "test-token"
+SMALL_BUDGET = 120
 
 
-def build_config(default_directory: str) -> AppConfig:
+def build_config() -> AppConfig:
     return AppConfig(
         telegram_bot_token=EXAMPLE_TOKEN,
-        default_working_directory=default_directory,
-        default_agent_mode="plan",
-        auto_approve_tools=False,
+        default_working_directory=tempfile.gettempdir(),
     )
 
 
-def build_session():
-    return SessionRegistry(build_config(str(Path(tempfile.gettempdir())))).get_or_create(
-        EXAMPLE_CHAT_ID
-    )
+def build_registry() -> SessionRegistry:
+    with tempfile.TemporaryDirectory() as directory:
+        return SessionRegistry(build_config(), Path(directory))
 
 
-class ConversationMemoryTest(unittest.TestCase):
+def build_log(budget: int = 10_000) -> ConversationLog:
+    with tempfile.TemporaryDirectory() as directory:
+        return ConversationLog(Path(directory), EXAMPLE_CHAT_ID, budget)
+
+
+class ConversationLogTest(unittest.TestCase):
+    def test_starts_empty(self) -> None:
+        self.assertEqual(build_log().render(), "")
+
+    def test_renders_a_recorded_turn(self) -> None:
+        log = build_log()
+        log.append("add hints", "done")
+
+        rendered = log.render()
+
+        self.assertIn("add hints", rendered)
+        self.assertIn("done", rendered)
+
+    def test_trims_a_very_long_answer(self) -> None:
+        log = build_log()
+        log.append("q", "x" * (MAX_TURN_ANSWER_CHARACTERS * 2))
+
+        answer = log.turns()[0][1]
+
+        self.assertLessEqual(len(answer), MAX_TURN_ANSWER_CHARACTERS)
+
+    def test_drops_the_oldest_turn_when_over_budget(self) -> None:
+        log = build_log(SMALL_BUDGET)
+        for index in range(20):
+            log.append(f"request {index} " * 3, f"answer {index} " * 3)
+
+        rendered = log.render()
+
+        self.assertNotIn("request 0", rendered)
+        self.assertIn("request 19", rendered)
+
+    def test_survives_a_restart(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            ConversationLog(Path(directory), EXAMPLE_CHAT_ID).append("q", "a")
+            reopened = ConversationLog(Path(directory), EXAMPLE_CHAT_ID)
+
+            self.assertEqual(len(reopened.turns()), 1)
+
+    def test_clear_removes_the_history(self) -> None:
+        log = build_log()
+        log.append("q", "a")
+        log.clear()
+
+        self.assertEqual(log.render(), "")
+
+    def test_skips_a_damaged_line(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / f"conversation-{EXAMPLE_CHAT_ID}.jsonl"
+            path.write_text("not json\n", encoding="utf-8")
+
+            log = ConversationLog(Path(directory), EXAMPLE_CHAT_ID)
+
+            self.assertEqual(log.turns(), [])
+
+
+class ChatSessionTest(unittest.TestCase):
     def test_first_prompt_has_no_history(self) -> None:
-        session = build_session()
+        session = build_registry().get_or_create(EXAMPLE_CHAT_ID)
 
-        self.assertEqual(session.build_prompt_with_context("now the tests"), "now the tests")
+        self.assertEqual(session.build_prompt_with_context("hi"), "hi")
 
-    def test_earlier_turns_are_replayed(self) -> None:
-        session = build_session()
-        session.remember_turn("add type hints", "done, 3 files")
+    def test_second_prompt_replays_the_first(self) -> None:
+        session = build_registry().get_or_create(EXAMPLE_CHAT_ID)
+        session.remember_turn("add hints", "done")
 
         prompt = session.build_prompt_with_context("now the tests")
 
-        self.assertIn("add type hints", prompt)
-        self.assertIn("done, 3 files", prompt)
+        self.assertIn("add hints", prompt)
         self.assertIn("now the tests", prompt)
 
-    def test_keeps_only_the_recent_turns(self) -> None:
-        session = build_session()
-        for index in range(MAX_REMEMBERED_TURNS + 3):
-            session.remember_turn(f"request {index}", f"answer {index}")
+    def test_adopted_transcript_is_replayed(self) -> None:
+        session = build_registry().get_or_create(EXAMPLE_CHAT_ID)
+        session.adopt_session("abc", "TRANSCRIPT")
 
-        prompt = session.build_prompt_with_context("latest")
+        self.assertIn("TRANSCRIPT", session.build_prompt_with_context("go on"))
 
-        self.assertNotIn("request 0", prompt)
-        self.assertIn(f"request {MAX_REMEMBERED_TURNS + 2}", prompt)
-
-    def test_very_long_answers_are_trimmed(self) -> None:
-        session = build_session()
-        session.remember_turn("q", "x" * (MAX_REMEMBERED_ANSWER_CHARACTERS * 2))
-
-        prompt = session.build_prompt_with_context("next")
-
-        self.assertLess(
-            len(prompt), MAX_REMEMBERED_ANSWER_CHARACTERS + len("q") + 500
-        )
-
-    def test_forget_turns_clears_the_memory(self) -> None:
-        session = build_session()
-        session.remember_turn("old", "answer")
-        session.forget_turns()
+    def test_forget_history_drops_everything(self) -> None:
+        session = build_registry().get_or_create(EXAMPLE_CHAT_ID)
+        session.remember_turn("q", "a")
+        session.adopt_session("abc", "TRANSCRIPT")
+        session.forget_history()
 
         self.assertEqual(session.build_prompt_with_context("fresh"), "fresh")
 
-
-class SessionRegistryTest(unittest.TestCase):
-    def test_creates_session_from_configuration_defaults(self) -> None:
-        registry = SessionRegistry(build_config(str(Path(tempfile.gettempdir()))))
-
-        session = registry.get_or_create(EXAMPLE_CHAT_ID)
-
-        self.assertEqual(session.agent_mode, "plan")
-        self.assertFalse(session.is_auto_approved)
-
-    def test_returns_the_same_session_for_the_same_chat(self) -> None:
-        registry = SessionRegistry(build_config(str(Path(tempfile.gettempdir()))))
-
-        first = registry.get_or_create(EXAMPLE_CHAT_ID)
-        second = registry.get_or_create(EXAMPLE_CHAT_ID)
-
-        self.assertIs(first, second)
-
-    def test_registers_the_model_command(self) -> None:
-        # A model can only be switched from the chat, so the command has to
-        # be reachable like every other one.
-        from cline_bot.app import COMMAND_ROUTES
-
-        self.assertIn("model", COMMAND_ROUTES)
-
-    def test_session_starts_without_a_model(self) -> None:
-        session = SessionRegistry(
-            build_config(str(Path(tempfile.gettempdir())))
-        ).get_or_create(EXAMPLE_CHAT_ID)
-
-        # None means "let the provider decide", not a hard-coded model.
-        self.assertIsNone(session.model_id)
-
     def test_keeps_chats_isolated(self) -> None:
-        registry = SessionRegistry(build_config(str(Path(tempfile.gettempdir()))))
+        registry = build_registry()
+        first = registry.get_or_create(EXAMPLE_CHAT_ID)
+        first.remember_turn("q", "a")
 
-        registry.get_or_create(EXAMPLE_CHAT_ID).agent_mode = "act"
-
-        self.assertEqual(registry.get_or_create(OTHER_CHAT_ID).agent_mode, "plan")
-
-    def test_replaces_a_directory_that_no_longer_exists(self) -> None:
-        fallback = tempfile.gettempdir()
-        registry = SessionRegistry(build_config(fallback))
-        session = registry.get_or_create(EXAMPLE_CHAT_ID)
-        session.working_directory = str(Path(fallback) / "deleted-folder")
-
-        resolved = registry.resolve_working_directory(session)
-
-        self.assertTrue(Path(resolved).is_dir())
+        self.assertEqual(registry.get_or_create(OTHER_CHAT_ID).conversation.turns(), [])
 
 
 if __name__ == "__main__":

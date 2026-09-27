@@ -35,6 +35,7 @@ COMMAND_ROUTES = {
     "status": "show_status",
     "stop": "stop_running_task",
     "history": "show_history",
+    "use": "adopt_session",
     "shell": "run_shell_command",
     "screen": "take_screenshot",
     "type": "type_on_screen",

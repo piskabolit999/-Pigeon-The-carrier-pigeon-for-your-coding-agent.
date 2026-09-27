@@ -11,7 +11,7 @@ import os
 import shutil
 import subprocess
 from pathlib import Path
-from typing import List, Optional, Set
+from typing import List, Optional
 
 from .text_utils import strip_ansi_codes
 
@@ -22,6 +22,9 @@ MAX_OUTPUT_CHARACTERS = 400_000
 OUTPUT_ENCODING = "utf-8"
 TRUNCATION_NOTICE = "[output truncated: limit reached]"
 DISABLED_THINKING_LEVEL = "none"
+HISTORY_SCAN_LIMIT = 50
+MAX_TRANSCRIPT_EXCERPTS = 25
+INCLUDED_ROLES = ("user", "assistant")
 
 LOGGER = logging.getLogger(__name__)
 
@@ -247,25 +250,79 @@ class ClineClient:
             return []
         return sessions if isinstance(sessions, list) else []
 
-    def find_cli_session_started_after(
-        self, known_session_ids: Set[str]
-    ) -> Optional[str]:
-        """Return the CLI session created after the given snapshot.
+    def session_context(self, session_id: str) -> str:
+        """Summarise a stored session so its work can be continued.
 
-        Taking a snapshot before the run and diffing afterwards identifies the
-        session this run produced, so a run never adopts an unrelated one
-        started in another terminal at the same time.
+        The CLI can only resume a session interactively, which a bot cannot
+        do. Reading the saved transcript instead lets a chat pick up where a
+        desktop or terminal session left off.
+
+        Only prose blocks are kept. Most stored messages are tool calls and
+        their results, so taking the last N messages would return almost no
+        readable context; taking the last N text blocks does.
         """
-        for session in self.fetch_recent_sessions():
-            session_id = session.get("sessionId")
-            if session.get("source") == "cli" and session_id not in known_session_ids:
-                return session_id
+        messages = self.fetch_session_messages(session_id)
+        excerpts = [
+            f"[{message['role']}] {text}"
+            for message in messages
+            if message.get("role") in INCLUDED_ROLES
+            for text in [self._message_text(message)]
+            if text.strip()
+        ]
+        if not excerpts:
+            return ""
+        transcript = "\n\n".join(excerpts[-MAX_TRANSCRIPT_EXCERPTS:])
+        return (
+            f"The following is the transcript of an earlier session "
+            f"({session_id}) on this project. Continue its work.\n\n{transcript}"
+        )
+
+    def fetch_session_messages(self, session_id: str) -> List[dict]:
+        """Load the saved message list of a session, empty when unreadable."""
+        messages_path = self._find_messages_path(session_id)
+        if messages_path is None:
+            return []
+        try:
+            payload = json.loads(messages_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            LOGGER.warning("Could not read session %s: %s", session_id, error)
+            return []
+        messages = payload.get("messages") if isinstance(payload, dict) else None
+        return messages if isinstance(messages, list) else []
+
+    def _find_messages_path(self, session_id: str) -> Optional[Path]:
+        """Locate the transcript of a session inside the CLI data directory."""
+        for session in self.fetch_recent_sessions(HISTORY_SCAN_LIMIT):
+            if session.get("sessionId") != session_id:
+                continue
+            recorded_path = session.get("messagesPath")
+            if recorded_path and Path(recorded_path).is_file():
+                return Path(recorded_path)
+        for candidate in self._sessions_directory().glob(f"*{session_id}*.json"):
+            return candidate
         return None
 
-    def snapshot_cli_session_ids(self) -> Set[str]:
-        """Record the CLI sessions that already exist."""
-        return {
-            session["sessionId"]
-            for session in self.fetch_recent_sessions()
-            if session.get("source") == "cli" and session.get("sessionId")
-        }
+    def _sessions_directory(self) -> Path:
+        return self._data_directory / "sessions"
+
+    @property
+    def _data_directory(self) -> Path:
+        override = os.environ.get("CLINE_DATA_DIR")
+        if override:
+            return Path(override)
+        return Path.home() / ".cline" / "data"
+
+    @staticmethod
+    def _message_text(message: dict) -> str:
+        """Return the plain text of a message regardless of its content shape."""
+        content = message.get("content")
+        if isinstance(content, str):
+            return content
+        if isinstance(content, list):
+            parts = [
+                block.get("text", "")
+                for block in content
+                if isinstance(block, dict) and block.get("type") == "text"
+            ]
+            return "".join(parts)
+        return ""

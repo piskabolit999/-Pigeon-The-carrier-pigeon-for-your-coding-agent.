@@ -25,6 +25,7 @@ LOGGER = logging.getLogger(__name__)
 
 STATUS_REFRESH_SECONDS = 3
 HISTORY_PROMPT_LENGTH = 70
+SESSION_LIST_SIZE = 8
 PROMPT_HEADER_LENGTH = 800
 
 HELP_TEXT = (
@@ -209,6 +210,34 @@ class BotHandlers:
         session = await self._resolve_session(update, context)
         if session is None:
             return
+        session.forget_history()
+        await update.effective_message.reply_text("🆕 The next prompt starts fresh.")
+
+    async def adopt_session(
+        self, update: Update, context: ContextTypes.DEFAULT_TYPE
+    ) -> None:
+        """Continue from a session that already exists on this machine."""
+        session = await self._resolve_session(update, context)
+        if session is None:
+            return
+        if not context.args:
+            await update.effective_message.reply_text(
+                "Usage: /use <session-id>. Find ids with /sessions."
+            )
+            return
+
+        requested_id = context.args[0]
+        transcript = self._cline.session_context(requested_id)
+        if not transcript:
+            await update.effective_message.reply_text(
+                f"❌ Could not read session {requested_id}."
+            )
+            return
+
+        session.adopt_session(requested_id, transcript)
+        await update.effective_message.reply_text(
+            f"🪢 Continuing from {requested_id}. The next prompt picks it up."
+        )
 
     async def show_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         session = await self._resolve_session(update, context)
@@ -232,18 +261,20 @@ class BotHandlers:
     async def show_history(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         if await self._resolve_session(update, context) is None:
             return
-        sessions = self._cline.fetch_recent_sessions()
+        sessions = self._cline.fetch_recent_sessions(SESSION_LIST_SIZE)
         if not sessions:
             await update.effective_message.reply_text("No sessions found.")
             return
         await self._reply_to_chat(
-            update, "🗂 Recent sessions\n" + "\n".join(self._describe_history(sessions))
+            update,
+            "🗂 Recent sessions — continue one with /use <id>\n"
+            + "\n".join(self._describe_history(sessions)),
         )
 
     @staticmethod
     def _describe_history(sessions: List[dict]) -> List[str]:
         return [
-            f"• {entry.get('sessionId')} [{entry.get('status')}] "
+            f"• {entry.get('sessionId')} [{entry.get('source')}] "
             f"{str(entry.get('prompt') or '')[:HISTORY_PROMPT_LENGTH]}"
             for entry in sessions
         ]
