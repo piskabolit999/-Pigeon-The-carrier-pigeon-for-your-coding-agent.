@@ -1,7 +1,9 @@
 """Unit tests for configuration loading and validation."""
 
 import os
+import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from cline_bot.config import (
@@ -56,6 +58,38 @@ class LoadConfigTest(unittest.TestCase):
         self.assertEqual(config.clite_command, "clite")
         self.assertEqual(config.default_agent_mode, "act")
         self.assertTrue(config.auto_approve_tools)
+
+
+class ReadRawConfigTest(unittest.TestCase):
+    def test_returns_empty_dict_when_the_file_is_missing(self) -> None:
+        with mock.patch("cline_bot.config.CONFIG_FILE_PATH", Path("C:/nowhere.json")):
+            with mock.patch("pathlib.Path.exists", return_value=False):
+                from cline_bot.config import _read_raw_config
+
+                self.assertEqual(_read_raw_config(), {})
+
+    def test_reports_the_file_name_on_a_parse_error(self) -> None:
+        broken = Path(tempfile.mkstemp(suffix=".json")[1])
+        broken.write_text('{"allowed_chat_ids": [allowed_chat_ids]}', encoding="utf-8")
+
+        with mock.patch("cline_bot.config.CONFIG_FILE_PATH", broken):
+            with self.assertRaises(ConfigurationError) as raised:
+                from cline_bot.config import _read_raw_config
+
+                _read_raw_config()
+
+        self.assertIn(broken.name, str(raised.exception))
+        self.assertIn("not valid JSON", str(raised.exception))
+
+    def test_rejects_a_json_array_at_the_top_level(self) -> None:
+        wrong_shape = Path(tempfile.mkstemp(suffix=".json")[1])
+        wrong_shape.write_text("[1, 2, 3]", encoding="utf-8")
+
+        with mock.patch("cline_bot.config.CONFIG_FILE_PATH", wrong_shape):
+            with self.assertRaises(ConfigurationError):
+                from cline_bot.config import _read_raw_config
+
+                _read_raw_config()
 
 
 class LogFileLocationTest(unittest.TestCase):

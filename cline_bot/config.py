@@ -75,9 +75,27 @@ class AppConfig:
 
 
 def _read_raw_config() -> Dict[str, Any]:
+    """Read config.json, reporting a parse error with a usable message.
+
+    A malformed file is a common mistake, and the default JSON error does not
+    say which file is broken or that the bot cannot start because of it.
+    """
     if not CONFIG_FILE_PATH.exists():
         return {}
-    return json.loads(CONFIG_FILE_PATH.read_text(encoding="utf-8"))
+    raw_text = CONFIG_FILE_PATH.read_text(encoding="utf-8")
+    try:
+        parsed = json.loads(raw_text)
+    except json.JSONDecodeError as error:
+        raise ConfigurationError(
+            f"{CONFIG_FILE_PATH.name} is not valid JSON: {error}. "
+            f"Check for a missing comma, a trailing comma, or an unquoted "
+            f"placeholder such as [allowed_chat_ids]."
+        ) from error
+    if not isinstance(parsed, dict):
+        raise ConfigurationError(
+            f"{CONFIG_FILE_PATH.name} must contain a JSON object at the top level."
+        )
+    return parsed
 
 
 def _resolve_token(raw_config: Dict[str, Any]) -> str:
