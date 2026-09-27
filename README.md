@@ -97,6 +97,8 @@ autostart at this moment** — nothing else to configure.
 | `/status` | directory, mode, session id, busy state |
 | `/stop` | cancel the running task |
 | `/history` | recent agent sessions |
+| `/sessions` | list sessions you can continue, with their ids |
+| `/use <id>` | continue an existing session from this machine |
 | `/screen` | send a screenshot of your desktop |
 | `/type <text>` | type into the focused window |
 | `/key <ENTER\|TAB\|ESC>` | send a keystroke |
@@ -127,9 +129,11 @@ Long polling means no public port, no tunnel and no inbound firewall rule.
 The prompt is passed to the CLI's Node entry point as an argument list, never
 a shell string, so emoji and non-Latin text survive intact.
 
-Pigeon remembers the last few exchanges of each chat and replays them into the
-next prompt. The CLI cannot resume a session without a TTY, and a bot is always
-pipes, so continuity is rebuilt this way instead.
+Pigeon remembers the whole conversation of each chat, on disk, so it survives a
+restart. The CLI cannot resume a session without a TTY, and a bot is always
+pipes, so each run is a fresh CLI session with the previous exchanges replayed
+into the prompt. `/sessions` and `/use <id>` do the same for a session that
+already exists on the machine.
 
 `/screen`, `/type` and `/key` expose the desktop: a screenshot of the virtual
 screen, typing into the focused window, and sending keystrokes.
@@ -190,12 +194,13 @@ cline_bot/
 ├── config.py               loading and validation
 ├── authorization.py        allowlist and pairing
 ├── session_registry.py     per-chat state
+├── conversation_log.py    durable chat history
 ├── cline_client.py         process control
 ├── polling.py              polling lifecycle (Python 3.12+ compatible)
 ├── handlers.py             Telegram handlers
 ├── text_utils.py           pure text helpers
 └── logging_setup.py        rotating logs
-tests/                      87 unit tests
+tests/                      92 unit tests
 ```
 
 Two rules keep it maintainable: `ClineClient` is the only module that spawns a
@@ -215,7 +220,7 @@ Python 3.12 and newer with `RuntimeError: There is no current event loop`.
 python -m unittest discover -s tests -t .
 ```
 
-87 tests, no network required. They cover output decoding, process
+92 tests, no network required. They cover output decoding, process
 termination, the output cap, allowlist and pairing logic, autostart script
 generation, the polling lifecycle, and config validation.
 
