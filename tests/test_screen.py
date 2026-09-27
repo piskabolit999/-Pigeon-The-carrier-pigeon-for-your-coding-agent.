@@ -2,7 +2,13 @@
 
 import unittest
 
-from cline_bot.screen import ScreenError, build_key_sequence, escape_for_send_keys
+from cline_bot.screen import (
+    LEFT_BUTTON_DOWN,
+    RIGHT_BUTTON_DOWN,
+    ScreenError,
+    build_key_sequence,
+    escape_for_send_keys,
+)
 
 
 class EscapeForSendKeysTest(unittest.TestCase):
@@ -44,6 +50,45 @@ class BuildKeySequenceTest(unittest.TestCase):
         # allowlist has to block anything that is not a plain key.
         with self.assertRaises(ScreenError):
             build_key_sequence("{LAUNCH calc}")
+
+
+class MouseTest(unittest.TestCase):
+    def test_registers_the_mouse_commands(self) -> None:
+        from cline_bot.app import COMMAND_ROUTES
+
+        for command in ("click", "move"):
+            self.assertIn(command, COMMAND_ROUTES)
+
+    def test_known_buttons_map_to_a_down_flag(self) -> None:
+        from cline_bot.screen import MOUSE_BUTTONS
+
+        self.assertEqual(MOUSE_BUTTONS["left"], LEFT_BUTTON_DOWN)
+        self.assertEqual(MOUSE_BUTTONS["right"], RIGHT_BUTTON_DOWN)
+
+
+class ClickArgumentTest(unittest.TestCase):
+    def setUp(self) -> None:
+        from cline_bot.handlers import BotHandlers
+
+        self.parse = BotHandlers._parse_position
+
+    def test_reads_a_bare_position(self) -> None:
+        self.assertEqual(self.parse(["100", "200"]), (100, 200, "left", 1))
+
+    def test_reads_a_button(self) -> None:
+        self.assertEqual(self.parse(["10", "20", "right"]), (10, 20, "right", 1))
+
+    def test_reads_a_click_count(self) -> None:
+        self.assertEqual(self.parse(["10", "20", "left", "2"]), (10, 20, "left", 2))
+
+    def test_lowercases_the_button(self) -> None:
+        self.assertEqual(self.parse(["1", "2", "MIDDLE"]), (1, 2, "middle", 1))
+
+    def test_rejects_missing_coordinates(self) -> None:
+        self.assertIsNone(self.parse(["10"]))
+
+    def test_rejects_non_numeric_coordinates(self) -> None:
+        self.assertIsNone(self.parse(["left", "down"]))
 
 
 class ScreenCommandTest(unittest.TestCase):

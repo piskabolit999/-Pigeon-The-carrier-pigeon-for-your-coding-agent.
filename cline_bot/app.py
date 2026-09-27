@@ -39,6 +39,8 @@ COMMAND_ROUTES = {
     "shell": "run_shell_command",
     "screen": "take_screenshot",
     "type": "type_on_screen",
+    "click": "click_screen",
+    "move": "move_mouse",
     "key": "press_key",
     "approve": "toggle_auto_approve",
 }

@@ -200,7 +200,7 @@ cline_bot/
 ├── handlers.py             Telegram handlers
 ├── text_utils.py           pure text helpers
 └── logging_setup.py        rotating logs
-tests/                      92 unit tests
+tests/                      105 unit tests
 ```
 
 Two rules keep it maintainable: `ClineClient` is the only module that spawns a
@@ -220,7 +220,7 @@ Python 3.12 and newer with `RuntimeError: There is no current event loop`.
 python -m unittest discover -s tests -t .
 ```
 
-92 tests, no network required. They cover output decoding, process
+105 tests, no network required. They cover output decoding, process
 termination, the output cap, allowlist and pairing logic, autostart script
 generation, the polling lifecycle, and config validation.
 

@@ -21,7 +21,9 @@ from .screen import (
     ScreenError,
     build_key_sequence,
     capture_screenshot,
+    click_at,
     escape_for_send_keys,
+    move_cursor,
     send_keys,
 )
 from .session_registry import ChatSession, SessionRegistry
@@ -48,6 +50,8 @@ HELP_TEXT = (
     "/shell <command> — run a PowerShell command\n"
     "/screen — send a screenshot of the desktop\n"
     "/type <text> — type into the focused window\n"
+    "/click <x> <y> [left|right|middle] [clicks] — click the screen\n"
+    "/move <x> <y> — move the mouse pointer\n"
     "/key <ENTER|TAB|ESC> — send a keystroke\n"
     "/approve on|off — toggle automatic tool approval"
 )
@@ -194,6 +198,64 @@ class BotHandlers:
             await update.effective_message.reply_text(f"❌ {error}")
             return
         await update.effective_message.reply_text("⌨️ Typed into the focused window.")
+
+    async def click_screen(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Click a point on the screen.
+
+        `/click 640 400`, `/click 640 400 right`, `/click 640 400 left 2`.
+        """
+        session = await self._resolve_session(update, context)
+        if session is None:
+            return
+        position = self._parse_position(context.args)
+        if position is None:
+            await update.effective_message.reply_text(
+                "Usage: /click <x> <y> [left|right|middle] [clicks]"
+            )
+            return
+
+        x, y, button, clicks = position
+        try:
+            await click_at(x, y, button, clicks)
+        except ScreenError as error:
+            await update.effective_message.reply_text(f"❌ {error}")
+            return
+        await update.effective_message.reply_text(
+            f"🖱 Clicked {x},{y} ({button}, x{clicks})."
+        )
+
+    async def move_mouse(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        session = await self._resolve_session(update, context)
+        if session is None:
+            return
+        if len(context.args) < 2:
+            await update.effective_message.reply_text("Usage: /move <x> <y>")
+            return
+        try:
+            x, y = int(context.args[0]), int(context.args[1])
+        except ValueError:
+            await update.effective_message.reply_text("❌ x and y must be numbers.")
+            return
+        try:
+            await move_cursor(x, y)
+        except ScreenError as error:
+            await update.effective_message.reply_text(f"❌ {error}")
+            return
+        await update.effective_message.reply_text(f"🖱 Pointer moved to {x},{y}.")
+
+    @staticmethod
+    def _parse_position(arguments) -> Optional[tuple]:
+        """Read x, y, an optional button and an optional click count."""
+        if len(arguments) < 2:
+            return None
+        try:
+            x, y = int(arguments[0]), int(arguments[1])
+        except ValueError:
+            return None
+
+        button = arguments[2].lower() if len(arguments) > 2 else "left"
+        clicks = int(arguments[3]) if len(arguments) > 3 and arguments[3].isdigit() else 1
+        return x, y, button, clicks
 
     async def press_key(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Send a keystroke, for example ENTER or TAB."""
