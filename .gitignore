@@ -11,3 +11,6 @@ __pycache__/
 # Local scratch output from manual probes
 probe*.py
 *-probe.txt
+
+# Isolated CLI state created by local diagnostics
+.cline-test/
